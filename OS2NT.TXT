@@ -1,0 +1,347 @@
+Introduction
+============
+
+There are several notes discussing coexistence of DOS, NT and OS/2 on
+one system.  I did it on a system with two SCSI disk drives.
+
+There must be many ways to accomplish this, but there are some that I
+tried which can lead to disastrous results.  This happened apparently
+because MSDOS 6.0 and OS/2 appear to treat partitioning on a second
+physical hard disk differently vis-a-vis logical DRIVE designations.
+I'll describe this situation.
+
+Some claim that a successful installation can be made in which the OS/2
+boot manager can select DOS or OS/2.  If you then select DOS, then the
+NT boot manager will allow you to select NT or DOS.  I tried to follow
+this scenario, but there appears to be a bug in the OS/2 Boot Manager
+that prevents NT from starting.  The bug may only be if NT is installed
+on a separate NTFS partition.  I've isolated this problem and propose a
+work-around.
+
+The work-around involves a C program that can save and restore partion
+records.  There are 4 partion records stored in the master boot record
+on each physical disk.  This 512 byte sector can be saved, modified and
+restored by a simple program.  Even if the NT installation puts zeros in
+the OS/2 Boot Manager partition record (it did), it can be restored.
+Even if the the OS/2 Boot Manager modifies a byte in the NT partion
+record (it does), it can be restored.  The technique is sketched at the
+end of this note.
+
+The usual recommendation is to install NT then OS/2.  I reversed that
+order, and discovered that NT deleted the OS/2 Boot Manager partition
+data in the master boot record.  I restored it with the partition record
+program.
+
+In all cases OS/2 is version 2.1 on CD-ROM and NT is the March Beta.
+
+Machine Base
+============
+
+My machine is a 486/33 with May '91 AMI Bios, 16M RAM and a 632M primary
+and a 495M second SCSI disk.
+
+The first 2 partitions of the first disk are Primary Dos and Extended
+DOS respectively.
+
+The 3rd partition is "NT ONLY" and is formatted as NTFS.
+
+The 4th partition was 1M reserved for the OS/2 Boot Manager at the end
+of the phyiscal drive.
+
+Initial Trials
+==============
+
+FDISK and FORMAT from DOS 6.0 was used to format the second disk
+followed by several attempts to load OS/2 on the second drive.  Some
+failed and others produced side effects I didn't like.
+
+If the second disk is partitioned with a primary DOS partition, then
+that becomes logical drive D:.  The logical drive assignments on the
+first disk move up a letter.  D: becomes E:, E: becomes F:.  I couldn't
+live with this reassignment so I tried other solutions.
+
+One try took advantage of an MSDOS 6.0 "feature" which allows you to
+create an extended DOS partition without having a primary DOS partition
+on the same drive.  I thought that this might solve the drive letter
+re-designation by eliminating the primary drive on disk 2 and it did --
+sort of!
+
+After reinstalling OS/2 and the OS/2 Boot Manager things seemed OK, so I
+tried NT. It did not boot, and reported the following:
+
+  HardError c000021a {fatal System Error}
+  Exception Processing Message c000021a Parameters e10c2088 0 0 0
+
+Next I moved the data from one logical drive (E:) on the first disk to
+one on the second disk.  Then I installed OS/2 on E:.  NT didn't boot.
+I reinstalled NT, but the result was the same -- NT wouldn't boot.
+
+Some detective work showed the System Indicator byte in the partition
+record for NT for the NT partition had been modified (to 0x17) by the
+OS/2 Boot Manager.  Restoring it to the original value (0x07) and making
+DOS the active partition allowed NT to boot successfully.
+
+I have not seen this result reported before.  IBM's tech support did not
+recognize the problem either.
+
+Disaster Installation
+=====================
+
+NOTE: In the discussion that follows the "normal" behavior of the DOS
+and OS/2 operating systems as concerns LOGICAL DRIVE TO PHYSICAL DRIVE
+MAPPING is as follows:
+
+Logical C:  Primary Dos partition on first physical drive (0x80).
+Logical D:  Primary Dos partition on SECOND physical drive (0x81).
+Logical E:, F:, etc.  are assigned in order first exhausting the logical
+drives in the extended DOS partition on the first physical drive (0x80)
+followed by the logical drives in the extended DOS partition on the
+second physical drive (0x81).
+
+UNLESS the Primary DOS Partition on drive 0x81 HAS BEEN DELETED!  In
+that case all logical drives on 0x80 are assigned from in order starting
+at C: then all logical drives in the extended DOS partition on 0x81 are
+assigned.  The 'HOPSCOTCHING" back and forth from drive to drive in the
+"NORMAL" case is avoided.
+
+NT was happy in its own partition, why not put OS/2 in its own
+partition?  This would free E: so it could be used as original and the
+use of the separate partition might solve the changing of NT's partition
+System Indicator byte.  I could put an HPFS in an unused logical drive
+in the extended DOS partition on the second drive.
+
+The OS/2 FDISK reported the free space in unassigned partitions.  I
+designated the size and exited FDISK.  The install process now correctly
+indicated the partition was not formatted, I agreed, and FORMAT
+completed.  Next it automatically tried to reboot, but with this
+message:
+
+  "Selected Partition is not formatted. Hit any key"
+
+I booted DOS and discovered drive D: was not found.  The DOS command:
+
+  UNFORMAT /PARTN /L
+
+Showed:
+
+  Disk 1	632
+	C:	128
+	E:	128	!!!
+	E:	128
+  Disk 2	495
+	D:	120	Not accessible by DOS (HPFS?)
+	F:	128
+	G:	128
+
+All data on the original D: was lost.  I believe that MSDOS 6.0, OS/2
+FDISK, OS/2 Boot Manager do not collectively agree on the logical drive
+designations for a 2 disk installation with no primary DOS partition
+designated on the 2nd disk.  My use of a new feature of MSDOS 6.0
+probably contributed to this problem.
+
+Good Result
+===========
+
+So I started over nearly from scratch (after restoring many 100s
+megabytes from tape)...
+
+I replaced MSDOS 6.0 with IBM PCDOS 5.0.  Then deleted all logical
+drives and partitions except the PRIMARY DOS (with C: in it.)
+
+The new configuration:
+
+  Disk 1
+    :0	128M DOS Primary
+	C:	     (IBM PCDOS 5.0)
+    :1	336M Extended DOS
+	D: (128)
+	E: (128)
+	F: (80)      (OS/2 2.1)
+    :2	167M Non-DOS (NT on NTFS)
+    :3	1M   Non-DOS (Boot Manager)
+
+  Disk 2
+    :0	1M   DOS Primary
+	(Set System Indicator byte to 0)
+    :1	494M Extended DOS
+	G: (128)
+	H: (128)
+	I: (128)
+	J: (110)
+
+I changed the System Indicator to 0 on the primary partition of disk 2
+so it would be not be recognized.  Then I followed this sequence:
+
+  1.  Format drives D:-J:.
+
+  2.  Made sure there were no remnants of the NT or MSDOS 6.0
+      installation on C: (both put hidden files in C:\.)
+
+  3.  Install OS/2 (After slowing machine down by turning off all cache
+      and shadow ROM switches -- see the OS/2 installation notes for
+      non-IBM hardware).  Installation went smooth this time albeit
+      slowly.  Play with OS/2. It seems stable.
+
+  4.  Capture the OS/2 partition record (see below).
+
+  5.  Install NT.  The NT installation destroyed the OS/2 Boot Manager
+      information in the partition record.  Shame on NT.
+
+  6.  Capture the NT partition record.
+
+
+OS/2 Boot Manager changes the partition record
+==============================================
+
+Create a new partition record that combines the OS/2 and NT data.  I did
+this by creating a copy of the NT partition record and hex edited the
+OS/2 boot manager partition data to it.
+
+With this configuration the OS/2 Boot Manager is now active, but still
+modifies the NT partition record, so I keep two boot partition records
+and load the appropriate one from DOS when I need to change from NT to
+OS/2.
+
+
+Impressions
+===========
+
+MSDOS 6.00 and the OS/2 installation process are incompatible in the
+area of partition management for a second disk (perhaps only if you have
+not specified a primary partition on that disk.) This is what I believe
+led to loss of data in my cited in the discussion above.  I believe the
+OS/2 and MSDOS 6.0 behave differently with respect to LOGICAL DRIVE
+LETTER ASSIGNMENT when there is no PRIMARY DOS partition on a second
+disk (Physical 0x81.)
+
+Certainly, OS/2 FDISK and FORMAT and the same named programs in DOS 6.0
+view the MSDOS 6.0 partition record on disk 2 (0x81) differently from
+each other.  Otherwise, I would not have had the confused drive letter
+assignment which led having lost data.  I solved the incompatibility by
+returning to an earlier DOS version which in turn forced a change of
+procedure.  I'll let the reader complete other squares on this test
+matrix.
+
+The NT installation zeros SYSTEM INDICATOR of the OS/2 Boot Manager part
+of the partition record.  This can, of course, be reversed (e.g.  by
+saving the partition record before installing NT and restoring it when
+you wish.)
+
+The OS/2 Boot Manager changes a byte in the NT boot partition record if
+NT is installed in its own NTFS partition on disk 1.  As a result, the
+OS/2 Boot Manager can not be active when I want to boot NT.
+
+I solved the partition record problems by the use of a special program
+that can save and load partition records.  To boot NT I load a partition
+record that makes DOS the active partition and changes the System
+Indicator byte on the NT partition to the correct value.  To boot OS/2,
+you can just make the OS/2 Boot Manager partition active.  The details
+of this program are discussed below.
+
+Appendix: Partition record management
+=====================================
+
+The partition information is saved in sector 1 of track 0 and has the
+following structure:
+
+  typedef unsigned char Byte;
+  typedef unsigned long Ulong;
+  typedef struct
+  {
+    Byte boot_ind;	// boot Indicator.  0 or 0x80 if active
+    Byte beg_cchr[3];	// Beginning of partition Track sector & head
+    Byte system_ind;	// 0x06 is BIG DOS primary
+			// 0x05 is Extended DOS
+			// 0x07 is NT - NTFS
+			// 0x0a is OS/2 Boot manager
+    Byte end_cchr[3];	// Ending of partition Track, sector and head
+    Ulong rel_sector;	// Starting sector number
+    Ulong num_sector;	// Length of partition in sectors
+  } PartionRecord;
+
+  typedef struct
+  {
+    Byte bootStuff[ 0x1be ];
+    PartionRecord par[ 4 ];
+    Byte endStuff[2];
+  } BootRec;
+
+To read a boot partition from disk, you can use the INT 0x13 function 2
+call.  To write use INT 0x13 function 3.
+
+  INT 13 parameters:
+    AH = 02h - read, 03h to write
+    AL = number of sectors to read
+    CH = track (plus bits 8,9 of CL)
+    CL = sector (01 to number of sectors per track for the drive)
+    DH = head
+    DL = drive
+    ES:BX = buffer pointer
+
+We don't have to worry about translating some large track number into
+appropriate bits of CL but can do something like the following:
+
+  union REGS in;
+  struct SREGS seg;
+
+  #define AX in.x.ax
+  #define BX in.x.bx
+  #define ES seg.es
+  #define CX in.x.cx
+  #define DX in.x.dx
+
+  char buf[512];
+  char far * p = ( char far * )buf;
+
+  AX = 0x0201;		// read 1 sector
+  BX = FP_OFF( p );	// into buf
+  ES = FP_SEG( p );
+  CX = 0x0001;		// from track 0, sector 1
+  DX = 0x0080;		// in drive 80 (81 is the second)
+  int86x( 0x13, &in, &in, &seg );
+
+Now by casting the buffer to a boot record:
+
+  BootRec *rec = (BootRec *)buf;
+  PartitionRecord *par = rec->par;
+
+We can read or change data in the buffer.
+
+  for (i = 0; i < 4; i++)
+    printf( " 0:%d %02x %02x\n", i, par[i].boot_ind, par[i].system_ind );
+
+Here is the results of the above printf() statement with an active OS/2
+boot manager in the 4th partition and the NT System Indicator set to 07.
+
+  0:0 00 06
+  0:1 00 05
+  0:2 00 07
+  0:3 80 0a
+
+Reboot and the OS/2 Boot Manager comes up.  Select DOS and run the
+program again.
+
+  0:0 00 06
+  0:1 00 05
+  0:2 00 17	 !! Boot manager changed NT's System Indicator
+  0:3 80 0a
+
+Just 1 little bit has changed.	But NT will not boot.  Change record
+again to allow NT to boot:
+
+  0:0 80 06	 Make 0 active
+  0:1 00 05
+  0:2 00 07	 Good NT System Indicator
+  0:3 00 0a
+
+Now NT boots (and by the way does not change the OS/2 Boot Manager
+record).
+
+Given that we can read the partition data from the boot record, it is
+easy to change the data and write the modified boot record back to the
+disk.
+
+Thanks to Steve Behman for suggestions, code and encouragement.
+
+Dave Hillman
+
